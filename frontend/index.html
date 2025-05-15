@@ -1,0 +1,255 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8">
+  <title>Detonation AI — расчёт детонационной адиабаты</title>
+
+  <!-- Bootstrap 5 CSS -->
+  <link
+    href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css"
+    rel="stylesheet"
+  >
+  <!-- Plotly.js -->
+  <script src="https://cdn.plot.ly/plotly-latest.min.js"></script>
+
+  <style>
+    /* MAI color palette */
+    :root {
+      --mai-blue: #005aa7;
+      --mai-light: #e6f0fa;
+      --mai-dark: #003b72;
+      --mai-accent: #ffcc00;
+    }
+    html, body {
+      height: 100%;
+      margin: 0;
+      background-color: var(--mai-light);
+      font-family: Arial, sans-serif;
+    }
+    body {
+      display: flex;
+      flex-direction: column;
+    }
+
+    /* Navbar */
+    .navbar {
+      background-color: var(--mai-blue) !important;
+    }
+    .navbar-brand img {
+      height: 40px;
+    }
+    .navbar-text {
+      color: white !important;
+      font-size: 1.25rem;
+      margin-left: 1rem;
+    }
+
+    /* Main content wrapper */
+    .content-wrapper {
+      flex: 1;
+      padding-top: 1rem;
+      padding-bottom: 1rem;
+    }
+
+    /* Cards */
+    .card {
+      border: none;
+      border-radius: 0.5rem;
+      box-shadow: 0 0.25rem 0.5rem rgba(0,0,0,0.1);
+      background-color: white;
+    }
+
+    /* Buttons */
+    .btn-primary,
+    .btn-success {
+      background-color: var(--mai-blue);
+      border-color: var(--mai-blue);
+    }
+    .btn-primary:hover,
+    .btn-success:hover {
+      background-color: var(--mai-dark);
+      border-color: var(--mai-dark);
+    }
+    .btn-outline-secondary {
+      color: var(--mai-blue);
+      border-color: var(--mai-blue);
+    }
+    .btn-outline-secondary:hover {
+      background-color: var(--mai-blue);
+      color: white;
+    }
+
+    /* Plots */
+    .plot {
+      width: 100%;
+      height: 350px;
+    }
+
+    /* Footer */
+    footer {
+      background-color: var(--mai-blue);
+      color: white;
+      padding: 1rem 0;
+      text-align: center;
+    }
+  </style>
+</head>
+<body>
+
+  <!-- Навбар MAI -->
+  <nav class="navbar navbar-expand-lg">
+    <div class="container">
+      <a class="navbar-brand" href="https://mai.ru/" target="_blank">
+        <img src="logo_mai.png" alt="МАИ">
+      </a>
+      <span class="navbar-text">Выпускная квалификационная работа бакалавра</span>
+    </div>
+  </nav>
+
+  <div class="container content-wrapper">
+    <!-- Форма ввода -->
+    <div class="card p-4 mb-4">
+      <h2 class="h4 mb-3">Расчёт детонационной адиабаты</h2>
+      <form id="calc-form">
+        <div class="mb-3">
+          <label for="composition" class="form-label">Состав (JSON)</label>
+          <textarea id="composition" class="form-control" rows="3">{"CH4":1.0,"O2":2.0}</textarea>
+        </div>
+        <div class="mb-3">
+          <label for="trm-file" class="form-label">Загрузить файл .trm/.txt</label>
+          <input type="file" id="trm-file" class="form-control" accept=".trm,.txt">
+        </div>
+        <div class="row g-3">
+          <div class="col-md-6">
+            <label for="T1" class="form-label">T₁, K</label>
+            <input type="number" id="T1" class="form-control" value="298">
+          </div>
+          <div class="col-md-6">
+            <label for="P1" class="form-label">P₁, Па</label>
+            <input type="number" id="P1" class="form-control" value="101325">
+          </div>
+        </div>
+        <button type="submit" class="btn btn-primary mt-4">Рассчитать</button>
+      </form>
+    </div>
+
+    <!-- Графики -->
+    <div class="row g-4 mb-4">
+      <div class="col-md-6">
+        <div class="card p-4 h-100 d-flex flex-column">
+          <h2 class="h5 mb-3">P–V диаграмма</h2>
+          <div id="pv-plot" class="plot flex-grow-1"></div>
+          <button id="save-pv" class="btn btn-outline-secondary mt-3 d-none align-self-start">
+            Скачать P–V
+          </button>
+        </div>
+      </div>
+      <div class="col-md-6">
+        <div class="card p-4 h-100 d-flex flex-column">
+          <h2 class="h5 mb-3">T–V диаграмма</h2>
+          <div id="tv-plot" class="plot flex-grow-1"></div>
+          <button id="save-tv" class="btn btn-outline-secondary mt-3 d-none align-self-start">
+            Скачать T–V
+          </button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Кнопка отчёта -->
+    <div class="text-center mb-5">
+      <button id="generate-report" class="btn btn-success btn-lg d-none">
+        Сформировать отчёт (PDF)
+      </button>
+    </div>
+  </div>
+
+  <!-- Подвал MAИ -->
+  <footer>
+    <div class="container">
+      © Московский авиационный институт, Карнаков Н.Д., М8О-406Б-21
+    </div>
+  </footer>
+
+  <!-- Bootstrap JS -->
+  <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+  <script>
+    const form           = document.getElementById('calc-form');
+    const savePv         = document.getElementById('save-pv');
+    const saveTv         = document.getElementById('save-tv');
+    const generateReport = document.getElementById('generate-report');
+    let lastPayload = null;
+
+    // Загрузка .trm/.txt
+    document.getElementById('trm-file').onchange = async e => {
+      const fileInput = e.target;
+      if (!fileInput.files.length) return;
+      const fd = new FormData();
+      fd.append('file', fileInput.files[0]);
+      const resp = await fetch('/api/upload',{ method: 'POST', body: fd });
+      if (!resp.ok) {
+        alert('Ошибка при загрузке файла: ' + resp.status);
+        return;
+      }
+      const data = await resp.json();
+      document.getElementById('composition').value = JSON.stringify(data.composition);
+    };
+
+    // Отправка на compute
+    form.onsubmit = async e => {
+      e.preventDefault();
+      const comp = JSON.parse(document.getElementById('composition').value);
+      const T1   = +document.getElementById('T1').value;
+      const P1   = +document.getElementById('P1').value;
+      lastPayload = { composition: comp, T1, P1 };
+
+      const resp = await fetch('/api/compute',{
+        method: 'POST',
+        headers: {'Content-Type':'application/json'},
+        body: JSON.stringify(lastPayload)
+      });
+      if (!resp.ok) {
+        alert(`Ошибка сервера: ${resp.status}`);
+        return;
+      }
+      const data = await resp.json();
+
+      // P–V
+      Plotly.newPlot('pv-plot',[{ x:data.curve.V, y:data.curve.P, mode:'lines' }],{
+        margin:{ t:30,b:50,l:60,r:30 },
+        xaxis:{ title:'V, м³/кг' },
+        yaxis:{ title:'P, Па', type:'log' }
+      }).then(gd=>{
+        savePv.classList.remove('d-none');
+        savePv.onclick = ()=> Plotly.downloadImage(gd,{format:'png',filename:'pv_curve'});
+      });
+
+      // T–V
+      Plotly.newPlot('tv-plot',[{ x:data.curve.V, y:data.curve.T, mode:'lines' }],{
+        margin:{ t:30,b:50,l:60,r:30 },
+        xaxis:{ title:'V, м³/кг' },
+        yaxis:{ title:'T, K' }
+      }).then(gd=>{
+        saveTv.classList.remove('d-none');
+        saveTv.onclick = ()=> Plotly.downloadImage(gd,{format:'png',filename:'tv_curve'});
+      });
+
+      // Кнопка отчёта
+      generateReport.classList.remove('d-none');
+      generateReport.onclick = async ()=>{
+        const r = await fetch('/api/report',{
+          method:'POST',
+          headers:{'Content-Type':'application/json'},
+          body:JSON.stringify(lastPayload)
+        });
+        if(!r.ok){ alert(`Ошибка при формировании отчёта: ${r.status}`); return; }
+        const blob = await r.blob();
+        const url  = URL.createObjectURL(blob);
+        const a    = document.createElement('a');
+        a.href     = url; a.download = 'report.pdf';
+        document.body.appendChild(a); a.click(); a.remove();
+        URL.revokeObjectURL(url);
+      };
+    };
+  </script>
+</body>
+</html>
