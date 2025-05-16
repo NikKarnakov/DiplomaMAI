@@ -25,6 +25,11 @@
 | `/backend/services/trm_to_txt.py`         | Модуль преобразования файлов формата .trm                         |
 | `/frontend/index.html`         | Модуль пользовательского интерфейса HTML|
 
+## Запуск
+
+```python -m uvicorn backend.main:app --reload --port 8000```
+
+
 
 ## Результаты
 
