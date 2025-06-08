@@ -2,254 +2,607 @@
 <html lang="ru">
 <head>
   <meta charset="UTF-8">
-  <title>Detonation AI — расчёт детонационной адиабаты</title>
-
-  <!-- Bootstrap 5 CSS -->
+  <title>ВКРБ 2025</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1">
   <link
-    href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css"
+    href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.1/dist/css/bootstrap.min.css"
     rel="stylesheet"
   >
-  <!-- Plotly.js -->
   <script src="https://cdn.plot.ly/plotly-latest.min.js"></script>
+  <!-- jsPDF -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
 
   <style>
-    /* MAI color palette */
-    :root {
-      --mai-blue: #005aa7;
-      --mai-light: #e6f0fa;
-      --mai-dark: #003b72;
-      --mai-accent: #ffcc00;
+    /* Фон хедера и футера */
+    header, footer {
+      background: linear-gradient(to right, #0057b7, #00aced);
+      color: white;
     }
-    html, body {
-      height: 100%;
-      margin: 0;
-      background-color: var(--mai-light);
-      font-family: Arial, sans-serif;
+    /* Квадратные контейнеры для графиков */
+    .plot-square {
+      width: 600px;
+      height: 600px;
+      margin: 0 auto;
     }
+    @media (max-width: 650px) {
+      .plot-square {
+        width: 100%;
+        height: auto;
+        aspect-ratio: 1 / 1;
+      }
+    }
+    /* Стили для «консольного» вывода */
+    #consoleTask3 {
+      background: #1e1e1e;
+      color: #dcdcdc;
+      padding: 12px;
+      border-radius: 4px;
+      font-family: monospace;
+      white-space: pre-wrap;
+      margin-top: 1rem;
+      max-height: 300px;
+      overflow-y: auto;
+    }
+    /* Отступы для основного контента между хедером и футером */
     body {
       display: flex;
       flex-direction: column;
+      min-height: 100vh;
+      margin: 0;
     }
-
-    /* Navbar */
-    .navbar {
-      background-color: var(--mai-blue) !important;
-    }
-    .navbar-brand img {
-      height: 40px;
-    }
-    .navbar-text {
-      color: white !important;
-      font-size: 1.25rem;
-      margin-left: 1rem;
-    }
-
-    /* Main content wrapper */
-    .content-wrapper {
+    main {
       flex: 1;
-      padding-top: 1rem;
-      padding-bottom: 1rem;
-    }
-
-    /* Cards */
-    .card {
-      border: none;
-      border-radius: 0.5rem;
-      box-shadow: 0 0.25rem 0.5rem rgba(0,0,0,0.1);
-      background-color: white;
-    }
-
-    /* Buttons */
-    .btn-primary,
-    .btn-success {
-      background-color: var(--mai-blue);
-      border-color: var(--mai-blue);
-    }
-    .btn-primary:hover,
-    .btn-success:hover {
-      background-color: var(--mai-dark);
-      border-color: var(--mai-dark);
-    }
-    .btn-outline-secondary {
-      color: var(--mai-blue);
-      border-color: var(--mai-blue);
-    }
-    .btn-outline-secondary:hover {
-      background-color: var(--mai-blue);
-      color: white;
-    }
-
-    /* Plots */
-    .plot {
-      width: 100%;
-      height: 350px;
-    }
-
-    /* Footer */
-    footer {
-      background-color: var(--mai-blue);
-      color: white;
-      padding: 1rem 0;
-      text-align: center;
     }
   </style>
+
+  <script>
+    // ============================
+    // 1) Загрузим и зарегистрируем Roboto-Regular.ttf ЛИШЬ ОДИН РАЗ при старте страницы.
+    //    Не будем делать fetch внутри click-хендлера – иначе браузер будет каждый раз запрашивать файл.
+    // ============================
+    async function loadRobotoFontOnce() {
+      try {
+        const response = await fetch('Roboto-Regular.ttf');
+        if (!response.ok) throw new Error(`Не удалось загрузить шрифт: ${response.status}`);
+        const arrayBuffer = await response.arrayBuffer();
+        // Функция для конвертации ArrayBuffer → Base64
+        const arrayBufferToBase64 = buffer => {
+          let binary = '';
+          const bytes = new Uint8Array(buffer);
+          for (let i = 0; i < bytes.byteLength; i++) {
+            binary += String.fromCharCode(bytes[i]);
+          }
+          return btoa(binary);
+        };
+        const base64Font = arrayBufferToBase64(arrayBuffer);
+
+        // Регистрируем шрифт в jsPDF
+        const { jsPDF } = window.jspdf;
+        jsPDF.API.addFileToVFS('Roboto-Regular.ttf', base64Font);
+        jsPDF.API.addFont('Roboto-Regular.ttf', 'Roboto', 'normal');
+        console.log('Шрифт Roboto-Regular.ttf успешно зарегистрирован в jsPDF.');
+      } catch (err) {
+        console.error('Ошибка при загрузке Roboto-Regular.ttf:', err);
+      }
+    }
+
+    // Запускаем загрузку шрифта сразу при загрузке страницы
+    window.addEventListener('DOMContentLoaded', () => {
+      loadRobotoFontOnce();
+    });
+  </script>
 </head>
 <body>
-
-  <!-- Навбар MAI -->
-  <nav class="navbar navbar-expand-lg">
-    <div class="container">
-      <a class="navbar-brand" href="https://mai.ru/" target="_blank">
-        <img src="logo_mai.png" alt="МАИ">
-      </a>
-      <span class="navbar-text">Выпускная квалификационная работа бакалавра</span>
+  <!-- Хедер -->
+  <header class="py-2 mb-4">
+    <div class="container d-flex align-items-center">
+      <img src="logo_mai.png" alt="Логотип МАИ" style="height: 50px; margin-right: 12px;">
+      <h1 class="h4 m-0">Выпускная квалификационная работа бакалавра</h1>
     </div>
-  </nav>
+  </header>
 
-  <div class="container content-wrapper">
-    <!-- Форма ввода -->
-    <div class="card p-4 mb-4">
-      <h2 class="h4 mb-3">Расчёт детонационной адиабаты</h2>
-      <form id="calc-form">
-        <div class="mb-3">
-          <label for="composition" class="form-label">Состав (JSON)</label>
-          <textarea id="composition" class="form-control" rows="3">{"CH4":1.0,"O2":2.0}</textarea>
-        </div>
-        <div class="mb-3">
-          <label for="trm-file" class="form-label">Загрузить файл .trm/.txt</label>
-          <input type="file" id="trm-file" class="form-control" accept=".trm,.txt">
-        </div>
-        <div class="row g-3">
-          <div class="col-md-6">
-            <label for="T1" class="form-label">T₁, K</label>
-            <input type="number" id="T1" class="form-control" value="298">
-          </div>
-          <div class="col-md-6">
-            <label for="P1" class="form-label">P₁, Па</label>
-            <input type="number" id="P1" class="form-control" value="101325">
-          </div>
-        </div>
-        <button type="submit" class="btn btn-primary mt-4">Рассчитать</button>
-      </form>
+  <!-- Основной контент -->
+  <main class="container py-4">
+    <!-- ====================== Задача 1 ====================== -->
+    <h2 class="mb-4">Построение прямой Релея и адиабаты Гюгонио</h2>
+    <form id="formTask1" class="row g-3 mb-4">
+      <div class="col-md-4">
+        <label for="task1_P1" class="form-label">P (Па)</label>
+        <input type="number" step="1" class="form-control" id="task1_P1" value="100000" required>
+      </div>
+      <div class="col-md-4">
+        <label for="task1_T1" class="form-label">T (K)</label>
+        <input type="number" step="0.1" class="form-control" id="task1_T1" value="300" required>
+      </div>
+      <div class="col-md-4">
+        <label for="task1_q" class="form-label">Состав смеси</label>
+        <input type="text" class="form-control" id="task1_q" value="O2:0.21 N2:0.79" required>
+      </div>
+      <div class="col-md-4">
+        <label for="task1_U1" class="form-label">U (м/с)</label>
+        <input type="number" step="1" class="form-control" id="task1_U1" value="1000" required>
+      </div>
+      <div class="col-md-4">
+        <label for="task1_n_steps" class="form-label">Кол-во шагов расчёта:</label>
+        <input type="number" class="form-control" id="task1_n_steps" value="50">
+      </div>
+      <div class="col-12">
+        <button type="submit" class="btn btn-primary">Рассчитать</button>
+      </div>
+    </form>
+    <div id="errorTask1" class="text-danger mb-4"></div>
+    <div id="plotTask1" class="plot-square mb-5"></div>
+
+    <hr>
+
+    <!-- ====================== Задача 2 ====================== -->
+    <h2 class="mb-4">Построение прямой Релея и адиабаты Гюгонио с точкой Чепмена-Жуге</h2>
+    <form id="formTask2" class="row g-3 mb-4">
+      <div class="col-md-4">
+        <label for="task2_P1" class="form-label">P (Па)</label>
+        <input type="number" step="1" class="form-control" id="task2_P1" value="100000" required>
+      </div>
+      <div class="col-md-4">
+        <label for="task2_T1" class="form-label">T (K)</label>
+        <input type="number" step="0.1" class="form-control" id="task2_T1" value="300" required>
+      </div>
+      <div class="col-md-4">
+        <label for="task2_q" class="form-label">Состав смеси</label>
+        <input type="text" class="form-control" id="task2_q" value="C3H8:1 O2:1" required>
+      </div>
+      <div class="col-md-4">
+        <label for="task2_v_steps" class="form-label">Кол-во шагов расчёта</label>
+        <input type="number" class="form-control" id="task2_v_steps" value="100">
+      </div>
+      <div class="col-md-4">
+        <label for="task2_v_min_factor" class="form-label">Минимальный удельный объём</label>
+        <input type="number" step="0.1" class="form-control" id="task2_v_min_factor" value="0.3">
+      </div>
+      <div class="col-md-4">
+        <label for="task2_v_max_factor" class="form-label">Максимальный удельный объём</label>
+        <input type="number" step="0.1" class="form-control" id="task2_v_max_factor" value="1.7">
+      </div>
+      <div class="col-12">
+        <button type="submit" class="btn btn-primary">Рассчитать</button>
+      </div>
+    </form>
+    <div id="errorTask2" class="text-danger mb-4"></div>
+    <div>
+      <div id="plotTask2_main" class="plot-square mb-5"></div>
     </div>
 
-    <!-- Графики -->
-    <div class="row g-4 mb-4">
-      <div class="col-md-6">
-        <div class="card p-4 h-100 d-flex flex-column">
-          <h2 class="h5 mb-3">P–V диаграмма</h2>
-          <div id="pv-plot" class="plot flex-grow-1"></div>
-          <button id="save-pv" class="btn btn-outline-secondary mt-3 d-none align-self-start">
-            Скачать P–V
-          </button>
-        </div>
+    <hr>
+
+    <!-- ====================== Задача 3 ====================== -->
+    <h2 class="mb-4">Зависимость D от u в составе смеси</h2>
+    <form id="formTask3" class="row g-3 mb-4">
+      <div class="col-md-3">
+        <label for="task3_P1" class="form-label">P (Па)</label>
+        <input type="number" step="1" class="form-control" id="task3_P1" value="100000" required>
+      </div>
+      <div class="col-md-3">
+        <label for="task3_T1" class="form-label">T (K)</label>
+        <input type="number" step="0.1" class="form-control" id="task3_T1" value="300" required>
       </div>
       <div class="col-md-6">
-        <div class="card p-4 h-100 d-flex flex-column">
-          <h2 class="h5 mb-3">T–V диаграмма</h2>
-          <div id="tv-plot" class="plot flex-grow-1"></div>
-          <button id="save-tv" class="btn btn-outline-secondary mt-3 d-none align-self-start">
-            Скачать T–V
-          </button>
-        </div>
+        <label for="task3_q_template" class="form-label">
+          Состав смеси<br>
+          <small class="text-muted">Например, "H2:1 O2:{u}"</small>
+        </label>
+        <input type="text" class="form-control" id="task3_q_template" value="H2:1 O2:{u}" required>
+      </div>
+      <div class="col-md-3">
+        <label for="task3_u_start" class="form-label">u_min</label>
+        <input type="number" step="0.01" class="form-control" id="task3_u_start" value="0.1" required>
+      </div>
+      <div class="col-md-3">
+        <label for="task3_u_end" class="form-label">u_max</label>
+        <input type="number" step="0.01" class="form-control" id="task3_u_end" value="1.0" required>
+      </div>
+      <div class="col-md-3">
+        <label for="task3_n_points" class="form-label">Кол-во шагов расчета</label>
+        <input type="number" class="form-control" id="task3_n_points" value="10">
+      </div>
+      <div class="col-md-3 d-flex align-items-end">
+        <button type="submit" class="btn btn-primary w-100">Рассчитать</button>
+      </div>
+    </form>
+    <div id="errorTask3" class="text-danger mb-4"></div>
+
+    <!-- Три квадратных контейнера для графиков Задачи 3 -->
+    <div class="row mb-3">
+      <div class="col-md-4 text-center mb-4">
+        <div id="plot3_Du" class="plot-square"></div>
+      </div>
+      <div class="col-md-4 text-center mb-4">
+        <div id="plot3_P2u" class="plot-square"></div>
+      </div>
+      <div class="col-md-4 text-center mb-4">
+        <div id="plot3_T2u" class="plot-square"></div>
       </div>
     </div>
 
-    <!-- Кнопка отчёта -->
-    <div class="text-center mb-5">
-      <button id="generate-report" class="btn btn-success btn-lg d-none">
-        Сформировать отчёт (PDF)
-      </button>
-    </div>
-  </div>
+    <!-- Консольный вывод для Задачи 3 -->
+    <h5 class="mt-4">Процесс рассчета</h5>
+    <pre id="consoleTask3"></pre>
 
-  <!-- Подвал MAИ -->
-  <footer>
-    <div class="container">
-      © Московский авиационный институт, Карнаков Н.Д., М8О-406Б-21
+    <!-- Кнопка генерации PDF -->
+    <div class="text-center mt-4 mb-5">
+      <button id="downloadReport" class="btn btn-success">Скачать отчет в PDF</button>
+    </div>
+  </main>
+
+  <!-- Футер -->
+  <footer class="py-3 mt-4">
+    <div class="container text-center">
+      © Московский авиационный институт, студент группы М8О-406Б-21, Карнаков Никита Дмитриевич
     </div>
   </footer>
 
-  <!-- Bootstrap JS -->
-  <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.1/dist/js/bootstrap.bundle.min.js"></script>
   <script>
-    const form           = document.getElementById('calc-form');
-    const savePv         = document.getElementById('save-pv');
-    const saveTv         = document.getElementById('save-tv');
-    const generateReport = document.getElementById('generate-report');
-    let lastPayload = null;
+    // Глобальные хранилища результатов
+    let dataTask1 = null;
+    let dataTask2 = null;
+    let dataTask3 = null;
 
-    // Загрузка .trm/.txt
-    document.getElementById('trm-file').onchange = async e => {
-      const fileInput = e.target;
-      if (!fileInput.files.length) return;
-      const fd = new FormData();
-      fd.append('file', fileInput.files[0]);
-      const resp = await fetch('/api/upload',{ method: 'POST', body: fd });
-      if (!resp.ok) {
-        alert('Ошибка при загрузке файла: ' + resp.status);
-        return;
-      }
-      const data = await resp.json();
-      document.getElementById('composition').value = JSON.stringify(data.composition);
-    };
-
-    // Отправка на compute
-    form.onsubmit = async e => {
+    // ====================== Задача 1 ======================
+    document.getElementById("formTask1").addEventListener("submit", async (e) => {
       e.preventDefault();
-      const comp = JSON.parse(document.getElementById('composition').value);
-      const T1   = +document.getElementById('T1').value;
-      const P1   = +document.getElementById('P1').value;
-      lastPayload = { composition: comp, T1, P1 };
 
-      const resp = await fetch('/api/compute',{
-        method: 'POST',
-        headers: {'Content-Type':'application/json'},
-        body: JSON.stringify(lastPayload)
-      });
-      if (!resp.ok) {
-        alert(`Ошибка сервера: ${resp.status}`);
+      const P1 = parseFloat(document.getElementById("task1_P1").value);
+      const T1 = parseFloat(document.getElementById("task1_T1").value);
+      const q  = document.getElementById("task1_q").value;
+      const U1 = parseFloat(document.getElementById("task1_U1").value);
+      const n_steps = parseInt(document.getElementById("task1_n_steps").value);
+
+      document.getElementById("errorTask1").innerText = "";
+
+      try {
+        const resp = await fetch("/api/reley_hugoniot", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ P1, T1, q, U1, n_steps })
+        });
+
+        if (!resp.ok) {
+          const err = await resp.json();
+          document.getElementById("errorTask1").innerText = err.detail || "Ошибка сервера";
+          return;
+        }
+        dataTask1 = { input: { P1, T1, q, U1, n_steps }, output: await resp.json() };
+
+        const data = dataTask1.output;
+        const traceR = { x: data.vR, y: data.PR, mode: "lines", name: "Прямая Релея" };
+        const traceH = { x: data.vH, y: data.PH, mode: "lines+markers", name: "Адиабата Гюгонио" };
+
+        const layout1 = {
+          width: 600,
+          height: 600,
+          title: `Ударная волна в воздухе, (Скорость=${U1} м/с)`,
+          xaxis: { title: "Объём, м³/кг" },
+          yaxis: { title: "Давление, Атмосфер" },
+          legend: { x: 0.1, y: 0.9 }
+        };
+
+        Plotly.newPlot("plotTask1", [traceR, traceH], layout1);
+      } catch (err) {
+        document.getElementById("errorTask1").innerText = "Непредвиденная ошибка: " + err;
+      }
+    });
+
+    // ====================== Задача 2 ======================
+    document.getElementById("formTask2").addEventListener("submit", async (e) => {
+      e.preventDefault();
+
+      const P1 = parseFloat(document.getElementById("task2_P1").value);
+      const T1 = parseFloat(document.getElementById("task2_T1").value);
+      const q  = document.getElementById("task2_q").value;
+      const v_steps = parseInt(document.getElementById("task2_v_steps").value);
+      const v_min_factor = parseFloat(document.getElementById("task2_v_min_factor").value);
+      const v_max_factor = parseFloat(document.getElementById("task2_v_max_factor").value);
+
+      document.getElementById("errorTask2").innerText = "";
+
+      try {
+        const resp = await fetch("/api/cj_reley_hugoniot", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ P1, T1, q, v_steps, v_min_factor, v_max_factor })
+        });
+
+        if (!resp.ok) {
+          const err = await resp.json();
+          document.getElementById("errorTask2").innerText = err.detail || "Ошибка сервера";
+          return;
+        }
+        dataTask2 = { input: { P1, T1, q, v_steps, v_min_factor, v_max_factor }, output: await resp.json() };
+
+        const data = dataTask2.output;
+        const traceR = { x: data.vR, y: data.PR, mode: "lines", name: "Прямая Релея" };
+        const traceH = { x: data.vH, y: data.PH, mode: "lines", name: "Адиабата Гюгонио" };
+        const traceCJ = {
+          x: [data.cj.vcj],
+          y: [data.cj.Pcj],
+          mode: "markers",
+          name: "Точка ЧЖ",
+          marker: { size: 12, color: "black" }
+        };
+
+        const layoutMain = {
+          width: 600,
+          height: 600,
+          title: `Скорочть ЧЖ = ${data.cj.speed.toFixed(1)} м/с`,
+          xaxis: { title: "Объём, м³/кг" },
+          yaxis: { title: "Давление, Атмосфер" },
+          legend: { x: 0.05, y: 0.95 }
+        };
+
+        Plotly.newPlot("plotTask2_main", [traceR, traceH, traceCJ], layoutMain);
+      } catch (err) {
+        document.getElementById("errorTask2").innerText = "Непредвиденная ошибка: " + err;
+      }
+    });
+
+    // ====================== Задача 3 ======================
+    document.getElementById("formTask3").addEventListener("submit", async (e) => {
+      e.preventDefault();
+
+      const P1 = parseFloat(document.getElementById("task3_P1").value);
+      const T1 = parseFloat(document.getElementById("task3_T1").value);
+      const q_template = document.getElementById("task3_q_template").value;
+      const u_start = parseFloat(document.getElementById("task3_u_start").value);
+      const u_end   = parseFloat(document.getElementById("task3_u_end").value);
+      const n_points = parseInt(document.getElementById("task3_n_points").value);
+
+      document.getElementById("errorTask3").innerText = "";
+      document.getElementById("consoleTask3").innerText = "";
+
+      // Генерируем u_values
+      const u_values = [];
+      const step = (u_end - u_start) / (n_points - 1);
+      for (let i = 0; i < n_points; i++) {
+        u_values.push(parseFloat((u_start + step * i).toFixed(4)));
+      }
+
+      try {
+        const resp = await fetch("/api/cj_speed_vs_u", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ P1, T1, q_template, u_values })
+        });
+
+        if (!resp.ok) {
+          const err = await resp.json();
+          document.getElementById("errorTask3").innerText = err.detail || "Ошибка сервера";
+          return;
+        }
+        dataTask3 = { input: { P1, T1, q_template, u_values }, output: await resp.json() };
+
+        const data = dataTask3.output;
+        // График D(u)
+        const traceDu = {
+          x: data.u,
+          y: data.speeds,
+          mode: "lines+markers",
+          name: "D(u)"
+        };
+        const layoutDu = {
+          width: 600,
+          height: 600,
+          title: "Зависимость D от u",
+          xaxis: { title: "u" },
+          yaxis: { title: "D, м/с" }
+        };
+        Plotly.newPlot("plot3_Du", [traceDu], layoutDu);
+
+        // График P₂(u)
+        const traceP2 = {
+          x: data.u,
+          y: data.pressures,
+          mode: "lines+markers",
+          name: "P₂(u)"
+        };
+        const layoutP2 = {
+          width: 600,
+          height: 600,
+          title: "Зависимость P₂ от u",
+          xaxis: { title: "u" },
+          yaxis: { title: "P₂, Атмосфер" }
+        };
+        Plotly.newPlot("plot3_P2u", [traceP2], layoutP2);
+
+        // График T₂(u)
+        const traceT2 = {
+          x: data.u,
+          y: data.temperatures,
+          mode: "lines+markers",
+          name: "T₂(u)"
+        };
+        const layoutT2 = {
+          width: 600,
+          height: 600,
+          title: "Зависимость T₂ от u",
+          xaxis: { title: "u" },
+          yaxis: { title: "T₂, K" }
+        };
+        Plotly.newPlot("plot3_T2u", [traceT2], layoutT2);
+
+        // Консольный вывод
+        const lines = [];
+        for (let i = 0; i < data.u.length; i++) {
+          const u_val = data.u[i].toFixed(3);
+          const speed = data.speeds[i].toFixed(2);
+          const P2    = data.pressures[i].toFixed(3);
+          const T2    = data.temperatures[i].toFixed(1);
+          lines.push(`u=${u_val} → D=${speed} m/s, P₂=${P2} atm, T₂=${T2} K`);
+        }
+        document.getElementById("consoleTask3").innerText = lines.join("\n");
+      } catch (err) {
+        document.getElementById("errorTask3").innerText = "Непредвиденная ошибка: " + err;
+      }
+    });
+
+    // ====================== Загрузка отчёта в PDF ======================
+    document.getElementById("downloadReport").addEventListener("click", async () => {
+      if (!dataTask1 || !dataTask2 || !dataTask3) {
+        alert("Пожалуйста, сначала выполните все три задачи, чтобы отчет содержал их результаты.");
         return;
       }
-      const data = await resp.json();
 
-      // P–V
-      Plotly.newPlot('pv-plot',[{ x:data.curve.V, y:data.curve.P, mode:'lines' }],{
-        margin:{ t:30,b:50,l:60,r:30 },
-        xaxis:{ title:'V, м³/кг' },
-        yaxis:{ title:'P, Па', type:'log' }
-      }).then(gd=>{
-        savePv.classList.remove('d-none');
-        savePv.onclick = ()=> Plotly.downloadImage(gd,{format:'png',filename:'pv_curve'});
-      });
+      const { jsPDF } = window.jspdf;
+      const doc = new jsPDF({ unit: "mm", format: "a4", orientation: "portrait" });
+      doc.setFont("Roboto");
+      doc.setFontSize(12);
 
-      // T–V
-      Plotly.newPlot('tv-plot',[{ x:data.curve.V, y:data.curve.T, mode:'lines' }],{
-        margin:{ t:30,b:50,l:60,r:30 },
-        xaxis:{ title:'V, м³/кг' },
-        yaxis:{ title:'T, K' }
-      }).then(gd=>{
-        saveTv.classList.remove('d-none');
-        saveTv.onclick = ()=> Plotly.downloadImage(gd,{format:'png',filename:'tv_curve'});
-      });
+      // Вспомогательная функция для страниц 1 и 2
+      async function addTaskPage({
+        title,
+        inputTextLines,
+        outputTextLines = [],
+        plotDivId,
+        addPageAfter = true
+      }) {
+        doc.setFontSize(14);
+        doc.text(title, 10, 15);
 
-      // Кнопка отчёта
-      generateReport.classList.remove('d-none');
-      generateReport.onclick = async ()=>{
-        const r = await fetch('/api/report',{
-          method:'POST',
-          headers:{'Content-Type':'application/json'},
-          body:JSON.stringify(lastPayload)
+        doc.setFontSize(12);
+        let y = 25;
+        doc.text("Input:", 10, y); y += 7;
+        inputTextLines.forEach(line => {
+          doc.text(`• ${line}`, 12, y);
+          y += 7;
         });
-        if(!r.ok){ alert(`Ошибка при формировании отчёта: ${r.status}`); return; }
-        const blob = await r.blob();
-        const url  = URL.createObjectURL(blob);
-        const a    = document.createElement('a');
-        a.href     = url; a.download = 'report.pdf';
-        document.body.appendChild(a); a.click(); a.remove();
-        URL.revokeObjectURL(url);
-      };
-    };
+
+        if (outputTextLines.length) {
+          doc.text("Output:", 10, y); y += 7;
+          outputTextLines.forEach(line => {
+            doc.text(`• ${line}`, 12, y);
+            y += 7;
+          });
+        }
+
+        try {
+          const imgData = await Plotly.toImage(
+            document.getElementById(plotDivId),
+            { format: 'png', width: 800, height: 800 }
+          );
+          const imgY = y + 5;
+          doc.addImage(imgData, 'PNG', 10, imgY, 180, 180);
+        } catch (e) {
+          console.error("Ошибка при конвертации графика в изображение:", e);
+          doc.setFontSize(10);
+          doc.text("Ошибка при формировании изображения графика.", 10, y + 5);
+        }
+
+        if (addPageAfter) doc.addPage();
+      }
+
+      // == Страница 1: Задача 1 ==
+      await addTaskPage({
+        title: "Task1. Rayleigh Line and Hugoniot",
+        inputTextLines: [
+          `P₁ = ${dataTask1.input.P1} Pa`,
+          `T₁ = ${dataTask1.input.T1} K`,
+          `q  = ${dataTask1.input.q}`,
+          `U = ${dataTask1.input.U1} m/s`,
+          `n = ${dataTask1.input.n_steps}`
+        ],
+        plotDivId: "plotTask1"
+      });
+
+      // == Страница 2: Задача 2 ==
+      await addTaskPage({
+        title: "Task2. Rayleigh Line, Hugoniot and CJ marker",
+        inputTextLines: [
+          `P₁ = ${dataTask2.input.P1} Pa`,
+          `T₁ = ${dataTask2.input.T1} K`,
+          `q  = ${dataTask2.input.q}`,
+          `v_steps = ${dataTask2.input.v_steps}`,
+          `v_min_factor = ${dataTask2.input.v_min_factor}`,
+          `v_max_factor = ${dataTask2.input.v_max_factor}`
+        ],
+        outputTextLines: [
+          `D = ${dataTask2.output.cj.speed.toFixed(2)} m/s`,
+          `V_CJ = ${dataTask2.output.cj.vcj.toFixed(6)} m³/kg`,
+          `P_CJ = ${dataTask2.output.cj.Pcj.toFixed(3)} atm`,
+          `T_CJ = ${dataTask2.output.cj.Tcj.toFixed(2)} K`,
+        ],
+        plotDivId: "plotTask2_main"
+      });
+
+      // == Страница 3: Задача 3 (текстовая часть) ==
+      doc.setFontSize(14);
+      doc.text("Task3. CJ Speed, P₂(u) and T₂(u)", 10, 15);
+
+      doc.setFontSize(12);
+      let y3 = 25;
+      doc.text("Input:", 10, y3); y3 += 7;
+      doc.text(`P₁ = ${dataTask3.input.P1} Pa`, 12, y3); y3 += 7;
+      doc.text(`T₁ = ${dataTask3.input.T1} K`, 12, y3); y3 += 7;
+      doc.text(`q_template = ${dataTask3.input.q_template}`, 12, y3); y3 += 7;
+      doc.text(`u_min = ${dataTask3.input.u_values[0].toFixed(4)}`, 12, y3); y3 += 7;
+      doc.text(`u_max = ${dataTask3.input.u_values[dataTask3.input.u_values.length - 1].toFixed(4)}`, 12, y3); y3 += 7;
+      doc.text(`n_points = ${dataTask3.input.u_values.length}`, 12, y3); y3 += 10;
+
+      doc.text("Output:", 10, y3); y3 += 7;
+      doc.setFontSize(10);
+      const consoleLines = document.getElementById("consoleTask3").innerText.split("\n");
+      consoleLines.forEach(line => {
+        if (y3 > 280) {
+          doc.addPage();
+          y3 = 20;
+          doc.setFontSize(10);
+        }
+        doc.text(line, 12, y3);
+        y3 += 6;
+      });
+      doc.addPage();
+
+      // == Страница 4: Задача 3 – график D(u) ==
+      doc.setFontSize(14);
+      doc.text("D vs u", 10, 15);
+      try {
+        const imgDu = await Plotly.toImage(
+          document.getElementById("plot3_Du"),
+          { format: 'png', width: 800, height: 800 }
+        );
+        doc.addImage(imgDu, 'PNG', 10, 25, 180, 180);
+      } catch (e) {
+        console.error(e);
+      }
+      doc.addPage();
+
+      // == Страница 5: Задача 3 – график P₂(u) ==
+      doc.setFontSize(14);
+      doc.text("P₂ vs u", 10, 15);
+      try {
+        const imgP2 = await Plotly.toImage(
+          document.getElementById("plot3_P2u"),
+          { format: 'png', width: 800, height: 800 }
+        );
+        doc.addImage(imgP2, 'PNG', 10, 25, 180, 180);
+      } catch (e) {
+        console.error(e);
+      }
+      doc.addPage();
+
+      // == Страница 6: Задача 3 – график T₂(u) ==
+      doc.setFontSize(14);
+      doc.text("T₂ vs u", 10, 15);
+      try {
+        const imgT2 = await Plotly.toImage(
+          document.getElementById("plot3_T2u"),
+          { format: 'png', width: 800, height: 800 }
+        );
+        doc.addImage(imgT2, 'PNG', 10, 25, 180, 180);
+      } catch (e) {
+        console.error(e);
+      }
+
+      // Сохраняем PDF
+      doc.save("report.pdf");
+    });
   </script>
 </body>
 </html>
