@@ -28,6 +28,10 @@
 
 ```python -m uvicorn backend.main:app --reload --port 8000```
 
+## Архитектура проекта
+
+
+
 ## Результаты
 
 | ![Первая задача](images/final1.png) |
